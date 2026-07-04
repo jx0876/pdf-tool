@@ -6,7 +6,7 @@
 
 直接開網址就能用，手機也行，檔案全程在你瀏覽器內處理、**不會上傳**：
 
-👉 **https://jx0876.github.io/pdf-tool/**
+👉 **https://dodosomething.github.io/pdf-tool/**
 
 功能：圖片＋PDF 合併成單一 PDF、PDF 轉 JPG/PNG（多張自動打包 zip）、拖曳排序。
 
