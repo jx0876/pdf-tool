@@ -1,0 +1,13 @@
+# Python
+desktop/.venv/
+__pycache__/
+*.pyc
+
+# 打包產物
+dist/
+build/
+*.spec
+
+# 系統
+.DS_Store
+Thumbs.db

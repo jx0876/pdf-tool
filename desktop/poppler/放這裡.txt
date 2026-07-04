@@ -1,0 +1,12 @@
+把 poppler 執行檔放進這個資料夾（讓 PDF→圖片 免額外安裝）。
+
+Windows：
+  1. 到 https://github.com/oschwartz10612/poppler-windows/releases 下載
+  2. 解壓後，把裡面的 Library 資料夾（含 bin/pdfinfo.exe）整個放進來
+  3. 最終路徑應為： desktop/poppler/Library/bin/pdfinfo.exe
+
+Mac / Linux：
+  多數情況直接 brew install poppler / apt install poppler-utils 即可，
+  不需要放這裡。若要離線內建，放對應平台的 poppler bin 進來也行。
+
+程式會自動依序找： poppler/Library/bin → poppler/bin → poppler

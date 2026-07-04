@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF 合併工具</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <header class="titlebar">
+    <div class="title">🗂 PDF 合併工具</div>
+    <div class="subtitle">圖片 / PDF → 合併成單一 PDF ・ 全程在你瀏覽器內處理，檔案不上傳</div>
+  </header>
+
+  <section class="card">
+    <div class="card-header">
+      <span>📋 檔案清單（可拖曳調整順序）</span>
+      <span class="hint">拖放檔案至下方，或點按鈕新增</span>
+    </div>
+    <div id="dropzone" class="dropzone">
+      <div id="empty" class="empty">
+        📂<br><br>將 JPG、PNG、PDF 拖放至此<br>或點下方按鈕新增檔案
+      </div>
+      <ul id="filelist" class="filelist"></ul>
+    </div>
+  </section>
+
+  <div class="ctrl-row">
+    <button class="sbtn" id="btn-add-img">＋ 新增圖片</button>
+    <button class="sbtn" id="btn-add-pdf">＋ 新增 PDF</button>
+    <button class="sbtn" id="btn-up">↑ 上移</button>
+    <button class="sbtn" id="btn-down">↓ 下移</button>
+    <button class="sbtn danger" id="btn-del">✕ 刪除</button>
+    <button class="sbtn danger" id="btn-clear">🗑 全部清除</button>
+  </div>
+
+  <div class="fmt-row">
+    <span class="muted">PDF → 圖片　格式：</span>
+    <label><input type="radio" name="fmt" value="JPG" checked> JPG</label>
+    <label><input type="radio" name="fmt" value="PNG"> PNG</label>
+    <span class="muted">　DPI：</span>
+    <select id="dpi">
+      <option>150</option><option>200</option><option selected>300</option><option>600</option>
+    </select>
+    <span class="muted small">（數字越大越清晰）</span>
+  </div>
+
+  <div class="action-row">
+    <button class="big merge" id="btn-merge">⬇ 合併輸出 PDF</button>
+    <button class="big toimg" id="btn-toimg">🖼 PDF → 圖片</button>
+  </div>
+
+  <div id="bar" class="progress"><div id="bar-fill"></div></div>
+  <pre id="log" class="log"></pre>
+</div>
+
+<input type="file" id="file-img" accept=".jpg,.jpeg,.png,.bmp,.jfif,.webp" multiple hidden>
+<input type="file" id="file-pdf" accept=".pdf" multiple hidden>
+
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
