@@ -8,8 +8,6 @@
 
 👉 **https://jx0876.github.io/pdf-tool/**
 
-（部署方式見下方「啟用 GitHub Pages」）
-
 功能：圖片＋PDF 合併成單一 PDF、PDF 轉 JPG/PNG（多張自動打包 zip）、拖曳排序。
 
 ## 💻 桌面版（可離線）
@@ -23,14 +21,6 @@
 需先安裝 [Python 3](https://www.python.org/downloads/)。詳見 [desktop/README.md](desktop/README.md)。
 
 ---
-
-## 啟用 GitHub Pages（你自己做一次）
-
-1. 這個 repo 推上 GitHub
-2. repo → **Settings → Pages**
-3. Source 選 **Deploy from a branch**，branch 選 `main` / 根目錄 `/`
-4. 存檔，等 1 分鐘 → 網址 `https://jx0876.github.io/pdf-tool/` 就活了
-5. 之後每次 `git push`，網頁**自動更新**成最新版
 
 ## 技術
 
