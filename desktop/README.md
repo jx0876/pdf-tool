@@ -1,5 +1,8 @@
 # 桌面版（可離線）
 
+功能：合併（圖片＋PDF → 單一 PDF）、PDF ↔ 圖片、**拆分 PDF**（擷取頁碼／每頁拆單檔）。
+（縮圖預覽、頁面編輯為線上版限定。）
+
 ## 用法
 
 前提：電腦先裝好 [Python 3](https://www.python.org/downloads/)（Windows 安裝時勾 **Add to PATH**）。
@@ -17,6 +20,13 @@
 - **Linux**：`sudo apt install poppler-utils`
 
 程式找 poppler 的順序：打包內建 → 同層 `poppler/` → `C:\poppler` → 系統 PATH。
+
+## 拆分 PDF
+
+需要 `pypdf`（已列入 `requirements.txt`，首次啟動自動裝；手動裝：`pip install pypdf`）。
+在「✂ 拆分」列輸入頁碼（如 `1-3,5,8-10`）：
+- **擷取這些頁** → 輸出單一 PDF
+- **每頁拆單檔** → 每頁存成單獨 PDF，放到輸出資料夾的 `<檔名>_拆分/`
 
 ## 拖放排序
 

@@ -1,6 +1,6 @@
-# PDF 合併工具
+# PDF 工具
 
-圖片 / PDF 互相合併、PDF 轉圖片。兩種用法，自己選：
+圖片 / PDF 合併、轉圖、拆分、頁面編輯。兩種用法，自己選：
 
 ## 🌐 線上版（免安裝，推薦）
 
@@ -8,7 +8,12 @@
 
 👉 **https://dodosomething.github.io/pdf-tool/**
 
-功能：圖片＋PDF 合併成單一 PDF、PDF 轉 JPG/PNG（多張自動打包 zip）、拖曳排序。
+功能：
+- **合併**：圖片＋PDF 合併成單一 PDF
+- **PDF → 圖片**：轉 JPG/PNG（多張自動打包 zip）
+- **拆分**：擷取指定頁碼為單一 PDF，或每頁拆成單檔（打包 zip）
+- **頁面編輯**：對 PDF 逐頁旋轉、刪頁、拖曳重排 → 輸出新 PDF
+- 清單縮圖預覽、拖曳排序
 
 ## 💻 桌面版（可離線）
 
@@ -24,5 +29,7 @@
 
 ## 技術
 
-- 線上版：純前端 JS（[pdf-lib](https://pdf-lib.js.org/) 合併、[pdf.js](https://mozilla.github.io/pdf.js/) 轉圖、JSZip 打包），零後端
-- 桌面版：Python + tkinter + Pillow + pdf2image + poppler
+- 線上版：純前端 JS（[pdf-lib](https://pdf-lib.js.org/) 合併/拆分/頁面編輯、[pdf.js](https://mozilla.github.io/pdf.js/) 轉圖與縮圖、JSZip 打包），零後端
+- 桌面版：Python + tkinter + Pillow + pdf2image + poppler + pypdf（拆分）
+
+> 桌面版功能：合併、PDF↔圖片、拆分。縮圖與頁面編輯為線上版限定。
