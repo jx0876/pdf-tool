@@ -28,6 +28,12 @@ try:
 except ImportError:
     HAS_DND = False
 
+try:
+    from pypdf import PdfReader, PdfWriter
+    HAS_PYPDF = True
+except ImportError:
+    HAS_PYPDF = False
+
 def _resolve_poppler_path():
     here = os.path.dirname(os.path.abspath(__file__))
     # 打包後（PyInstaller）用 bundle 內的 poppler
@@ -216,6 +222,23 @@ class App(tk.Tk if not HAS_DND else dnd.Tk):
                  font=("Microsoft JhengHei", 9),
                  bg=BG, fg=SUBTEXT).pack(side="left", padx=(6,0))
 
+        # ── 拆分 PDF ──
+        split_row = tk.Frame(self, bg=BG)
+        split_row.pack(fill="x", padx=20, pady=(0,8))
+        tk.Label(split_row, text="✂ 拆分（對選取的 PDF）：",
+                 font=("Microsoft JhengHei", 10),
+                 bg=BG, fg=SUBTEXT).pack(side="left")
+        self.split_entry = tk.Entry(split_row, width=18,
+                                    font=("Microsoft JhengHei", 10),
+                                    relief="flat", highlightthickness=1,
+                                    highlightbackground=BORDER, highlightcolor=ACCENT)
+        self.split_entry.pack(side="left", padx=(0,4), ipady=3)
+        tk.Label(split_row, text="如 1-3,5,8-10",
+                 font=("Microsoft JhengHei", 8),
+                 bg=BG, fg=SUBTEXT).pack(side="left", padx=(0,8))
+        self._sbtn(split_row, "擷取這些頁", self._split_extract).pack(side="left", padx=(0,4))
+        self._sbtn(split_row, "每頁拆單檔", self._split_each).pack(side="left")
+
         # ── 功能按鈕列 ──
         action_row = tk.Frame(self, bg=BG)
         action_row.pack(fill="x", padx=20, pady=(0,8))
@@ -347,6 +370,110 @@ class App(tk.Tk if not HAS_DND else dnd.Tk):
         if self.file_list and messagebox.askyesno("確認", "確定清除所有檔案？"):
             self.file_list.clear()
             self._refresh_list()
+
+    # ── 拆分 PDF ─────────────────────────────────────────
+    def _current_pdf(self):
+        """取要拆分的 PDF：選取者優先；否則清單剛好只有 1 個 PDF 就用它。"""
+        pdfs = [p for p in self.file_list if Path(p).suffix.lower() == ".pdf"]
+        sel = self.listbox.curselection()
+        if sel:
+            p = self.file_list[sel[0]]
+            if Path(p).suffix.lower() == ".pdf":
+                return p
+        if len(pdfs) == 1:
+            return pdfs[0]
+        if not pdfs:
+            messagebox.showwarning("提示", "清單裡沒有 PDF，請先新增 PDF！")
+        else:
+            messagebox.showwarning("提示", "清單有多個 PDF，請先在清單點選要拆分的那個。")
+        return None
+
+    def _parse_range(self, s, total):
+        """'1-3,5,8-10' → 0-based 頁碼清單（驗證、去重、保留順序）。"""
+        out = []
+        for part in s.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            if "-" in part:
+                a, _, b = part.partition("-")
+                a, b = int(a), int(b)
+            else:
+                a = b = int(part)
+            if a > b:
+                a, b = b, a
+            for p in range(a, b + 1):
+                if p < 1 or p > total:
+                    raise ValueError(f"頁碼超出範圍：{p}（共 {total} 頁）")
+                if (p - 1) not in out:
+                    out.append(p - 1)
+        return out
+
+    def _split_extract(self):
+        if not HAS_PYPDF:
+            messagebox.showerror("缺套件", "拆分需要 pypdf：pip install pypdf")
+            return
+        path = self._current_pdf()
+        if not path:
+            return
+        raw = self.split_entry.get().strip()
+        if not raw:
+            messagebox.showinfo("提示", "請輸入頁碼，例如 1-3,5")
+            return
+        try:
+            reader = PdfReader(path)
+            idxs = self._parse_range(raw, len(reader.pages))
+        except ValueError as e:
+            messagebox.showerror("頁碼錯誤", str(e))
+            return
+        except Exception as e:
+            messagebox.showerror("讀取失敗", str(e))
+            return
+        if not idxs:
+            messagebox.showinfo("提示", "沒有有效頁碼")
+            return
+        stem  = Path(path).stem
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_path = os.path.join(self.out_dir, f"{stem}_擷取_{stamp}.pdf")
+        try:
+            writer = PdfWriter()
+            for i in idxs:
+                writer.add_page(reader.pages[i])
+            with open(out_path, "wb") as f:
+                writer.write(f)
+            self._log(f"🎉 已擷取 {len(idxs)} 頁 → {Path(out_path).name}", "ok")
+        except Exception as e:
+            self._log(f"✘ 錯誤：{e}", "err")
+
+    def _split_each(self):
+        if not HAS_PYPDF:
+            messagebox.showerror("缺套件", "拆分需要 pypdf：pip install pypdf")
+            return
+        path = self._current_pdf()
+        if not path:
+            return
+        try:
+            reader = PdfReader(path)
+        except Exception as e:
+            messagebox.showerror("讀取失敗", str(e))
+            return
+        n = len(reader.pages)
+        if n < 2:
+            messagebox.showinfo("提示", "只有 1 頁，不需要拆分")
+            return
+        stem = Path(path).stem
+        out_dir = os.path.join(self.out_dir, f"{stem}_拆分")
+        os.makedirs(out_dir, exist_ok=True)
+        try:
+            for i in range(n):
+                writer = PdfWriter()
+                writer.add_page(reader.pages[i])
+                fp = os.path.join(out_dir, f"{stem}_{i+1:03d}.pdf")
+                with open(fp, "wb") as f:
+                    writer.write(f)
+            self._log(f"🎉 已拆成 {n} 個單頁 PDF → {stem}_拆分/", "ok")
+        except Exception as e:
+            self._log(f"✘ 錯誤：{e}", "err")
 
     def _change_dir(self):
         d = filedialog.askdirectory(initialdir=self.out_dir)

@@ -1,3 +1,4 @@
 pillow
 pdf2image
+pypdf
 tkinterdnd2; python_version < "3.13"
