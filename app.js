@@ -161,7 +161,14 @@ dropzone.addEventListener("drop", (e) => {
 $("#btn-add-img").onclick = () => $("#file-img").click();
 $("#btn-add-pdf").onclick = () => $("#file-pdf").click();
 $("#file-img").onchange = (e) => { addFiles(e.target.files); e.target.value = ""; };
-$("#file-pdf").onchange = (e) => { addFiles(e.target.files); e.target.value = ""; };
+$("#file-pdf").onchange = async (e) => {
+  await addFiles(e.target.files); e.target.value = "";
+  if (pendingEdit) {                       // 從「頁面編輯」空清單觸發的挑檔
+    pendingEdit = false;
+    const f = files.filter((x) => x.kind === "pdf").pop();
+    if (f) { selected = f.id; render(); try { await openEditor(f); } catch { /* noop */ } }
+  }
+};
 
 function selIndex() { return files.findIndex((f) => f.id === selected); }
 $("#btn-up").onclick = () => {
@@ -379,11 +386,19 @@ let edOps = [];                 // [{index:原頁碼(0-based), rotate:0/90/180/2
 let edDoc = null;              // pdf.js doc（產頁縮圖用）
 const edThumb = new Map();     // 原頁碼 -> dataURL
 
+let pendingEdit = false;
 $("#btn-edit").onclick = async () => {
-  const f = currentPdf(); if (!f) return;
-  if (!f.pages) { alert("讀不到頁數"); return; }
-  try { await openEditor(f); }
-  catch (e) { alert("開啟失敗：" + e.message); }
+  const f = currentPdf(true);              // 靜默：自己決定怎麼引導
+  if (f) {
+    if (!f.pages) { alert("讀不到頁數"); return; }
+    try { await openEditor(f); } catch (e) { alert("開啟失敗：" + e.message); }
+    return;
+  }
+  if (!files.some((x) => x.kind === "pdf")) {   // 清單沒 PDF → 直接開檔案選擇
+    pendingEdit = true; $("#file-pdf").click();
+  } else {
+    alert("清單有多個 PDF：請先在清單點一下要編輯的那個 PDF");
+  }
 };
 
 async function openEditor(f) {
