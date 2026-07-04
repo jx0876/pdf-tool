@@ -4,7 +4,7 @@
    拆分 PDF：pdf-lib
    全程本機處理，檔案不上傳。 */
 
-const { PDFDocument } = PDFLib;
+const { PDFDocument, degrees } = PDFLib;
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
@@ -371,6 +371,123 @@ $("#btn-split-each").onclick = async () => {
   } catch (e) {
     log(`✘ 錯誤：${e.message}`, "err");
   } finally { setBusy(false); setBar(0); }
+};
+
+// ── 頁面編輯（刪頁 / 旋轉 / 拖曳重排 → 輸出）──
+let edFile = null;              // 正在編輯的檔
+let edOps = [];                 // [{index:原頁碼(0-based), rotate:0/90/180/270}]
+let edDoc = null;              // pdf.js doc（產頁縮圖用）
+const edThumb = new Map();     // 原頁碼 -> dataURL
+
+$("#btn-edit").onclick = async () => {
+  const f = currentPdf(); if (!f) return;
+  if (!f.pages) { alert("讀不到頁數"); return; }
+  try { await openEditor(f); }
+  catch (e) { alert("開啟失敗：" + e.message); }
+};
+
+async function openEditor(f) {
+  edFile = f;
+  edOps = Array.from({ length: f.pages }, (_, i) => ({ index: i, rotate: 0 }));
+  edThumb.clear();
+  edDoc = await pdfjsLib.getDocument({ data: f.bytes.slice(0) }).promise;
+  $("#editor-title").textContent = `頁面編輯 — ${f.name}（${f.pages} 頁）`;
+  $("#editor").hidden = false;
+  renderEditor();
+}
+function closeEditor() {
+  $("#editor").hidden = true;
+  edFile = null; edOps = []; edDoc = null; edThumb.clear();
+}
+
+async function edPageThumb(origIndex) {
+  if (edThumb.has(origIndex)) return edThumb.get(origIndex);
+  const page = await edDoc.getPage(origIndex + 1);
+  const vp = page.getViewport({ scale: 1 });
+  const scale = Math.min(220 / vp.width, 300 / vp.height);
+  const v = page.getViewport({ scale });
+  const c = document.createElement("canvas");
+  c.width = Math.ceil(v.width); c.height = Math.ceil(v.height);
+  await page.render({ canvasContext: c.getContext("2d"), viewport: v }).promise;
+  const url = c.toDataURL("image/jpeg", 0.72);
+  edThumb.set(origIndex, url);
+  return url;
+}
+
+function renderEditor() {
+  const grid = $("#editor-grid");
+  grid.innerHTML = "";
+  edOps.forEach((op, pos) => {
+    const card = document.createElement("div");
+    card.className = "pcard";
+    card.draggable = true;
+    card.dataset.pos = pos;
+    card.innerHTML =
+      `<div class="pthumb-box"><img class="pthumb" alt=""></div>` +
+      `<span class="pnum">第 ${pos + 1} 頁（原 ${op.index + 1}）</span>` +
+      `<span class="pbtns">` +
+      `<button class="rl" title="左轉">⟲</button>` +
+      `<button class="rr" title="右轉">⟳</button>` +
+      `<button class="del" title="刪頁">🗑</button></span>`;
+    const img = card.querySelector(".pthumb");
+    img.style.transform = `rotate(${op.rotate}deg)`;
+    edPageThumb(op.index).then((u) => { img.src = u; }).catch(() => {});
+    card.querySelector(".rl").onclick = (e) => { e.stopPropagation(); op.rotate = (op.rotate + 270) % 360; img.style.transform = `rotate(${op.rotate}deg)`; };
+    card.querySelector(".rr").onclick = (e) => { e.stopPropagation(); op.rotate = (op.rotate + 90) % 360; img.style.transform = `rotate(${op.rotate}deg)`; };
+    card.querySelector(".del").onclick = (e) => {
+      e.stopPropagation();
+      if (edOps.length <= 1) { alert("至少要留 1 頁"); return; }
+      edOps.splice(pos, 1); renderEditor();
+    };
+    grid.appendChild(card);
+  });
+}
+
+// 編輯器內拖曳重排
+let edDragPos = null;
+$("#editor-grid").addEventListener("dragstart", (e) => {
+  const card = e.target.closest(".pcard"); if (!card) return;
+  edDragPos = +card.dataset.pos; card.classList.add("dragging");
+});
+$("#editor-grid").addEventListener("dragend", (e) => {
+  const card = e.target.closest(".pcard"); if (card) card.classList.remove("dragging");
+  edDragPos = null;
+});
+$("#editor-grid").addEventListener("dragover", (e) => {
+  e.preventDefault();
+  const over = e.target.closest(".pcard"); if (!over || edDragPos == null) return;
+  const to = +over.dataset.pos;
+  if (to === edDragPos) return;
+  const [moved] = edOps.splice(edDragPos, 1);
+  edOps.splice(to, 0, moved);
+  edDragPos = to;
+  renderEditor();
+});
+
+$("#ed-cancel").onclick = closeEditor;
+
+$("#ed-export").onclick = async () => {
+  if (!edFile || !edOps.length) return;
+  const f = edFile, ops = edOps.slice();
+  const stem = f.name.replace(/\.pdf$/i, "");
+  $("#ed-export").disabled = true;
+  log(`▶ 輸出編輯後 PDF（${ops.length} 頁）…`, "info");
+  try {
+    const src = await PDFDocument.load(f.bytes);
+    const out = await PDFDocument.create();
+    const copied = await out.copyPages(src, ops.map((o) => o.index));
+    copied.forEach((pg, i) => {
+      const base = pg.getRotation().angle || 0;
+      pg.setRotation(degrees(((base + ops[i].rotate) % 360 + 360) % 360));
+      out.addPage(pg);
+    });
+    const bytes = await out.save();
+    download(new Blob([bytes], { type: "application/pdf" }), `${stem}_編輯_${stamp()}.pdf`);
+    log(`🎉 已輸出 ${ops.length} 頁 → ${stem}_編輯.pdf`, "ok");
+    closeEditor();
+  } catch (e) {
+    log(`✘ 錯誤：${e.message}`, "err");
+  } finally { $("#ed-export").disabled = false; }
 };
 
 render();
