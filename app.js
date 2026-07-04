@@ -1,6 +1,7 @@
 /* PDF 合併工具 — 純瀏覽器版
    合併 PDF / 圖轉 PDF：pdf-lib
-   PDF → 圖片：pdf.js（+ JSZip 多張打包）
+   PDF → 圖片、縮圖：pdf.js（+ JSZip 多張打包）
+   拆分 PDF：pdf-lib
    全程本機處理，檔案不上傳。 */
 
 const { PDFDocument } = PDFLib;
@@ -8,9 +9,11 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
 const IMG_EXT = ["jpg", "jpeg", "png", "bmp", "jfif", "webp"];
-let files = [];          // {id, name, kind:'image'|'pdf', ext, bytes:ArrayBuffer}
+let files = [];          // {id, name, kind:'image'|'pdf', ext, bytes:ArrayBuffer, pages?}
 let selected = null;     // 選中的 id
 let uid = 0;
+const thumbCache = new Map();   // id -> dataURL
+const thumbBusy = new Set();    // 正在產縮圖的 id
 
 // ── DOM ──
 const $ = (s) => document.querySelector(s);
@@ -41,9 +44,59 @@ async function addFiles(fileObjs) {
     else if (IMG_EXT.includes(ext)) kind = "image";
     else { log(`⚠ 略過不支援：${f.name}`, "err"); continue; }
     const bytes = await f.arrayBuffer();
-    files.push({ id: ++uid, name: f.name, kind, ext, bytes });
+    const item = { id: ++uid, name: f.name, kind, ext, bytes };
+    if (kind === "pdf") {
+      try { item.pages = (await PDFDocument.load(bytes)).getPageCount(); }
+      catch { item.pages = 0; }
+    }
+    files.push(item);
   }
   render();
+}
+
+// ── 縮圖 ──
+async function imageThumb(f) {
+  const url = URL.createObjectURL(new Blob([f.bytes.slice(0)], { type: "image/" + f.ext }));
+  try {
+    const img = await new Promise((res, rej) => {
+      const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = url;
+    });
+    return drawThumb(img, img.naturalWidth, img.naturalHeight);
+  } finally { URL.revokeObjectURL(url); }
+}
+async function pdfThumb(f) {
+  const doc = await pdfjsLib.getDocument({ data: f.bytes.slice(0) }).promise;
+  const page = await doc.getPage(1);
+  const vp = page.getViewport({ scale: 1 });
+  const scale = Math.min(76 / vp.width, 100 / vp.height); // 縮圖目標 ~2x 顯示尺寸
+  const v = page.getViewport({ scale });
+  const c = document.createElement("canvas");
+  c.width = Math.ceil(v.width); c.height = Math.ceil(v.height);
+  await page.render({ canvasContext: c.getContext("2d"), viewport: v }).promise;
+  return c.toDataURL("image/jpeg", 0.7);
+}
+function drawThumb(src, w, h) {
+  const maxW = 76, maxH = 100;
+  const s = Math.min(maxW / w, maxH / h, 1);
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(w * s)); c.height = Math.max(1, Math.round(h * s));
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+  ctx.drawImage(src, 0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", 0.7);
+}
+async function fillThumbs() {
+  for (const f of files) {
+    if (thumbCache.has(f.id) || thumbBusy.has(f.id)) continue;
+    thumbBusy.add(f.id);
+    try {
+      const url = f.kind === "image" ? await imageThumb(f) : await pdfThumb(f);
+      thumbCache.set(f.id, url);
+      const el = listEl.querySelector(`li[data-id="${f.id}"] .thumb`);
+      if (el) el.src = url;
+    } catch { /* 縮圖失敗就留佔位，不影響功能 */ }
+    finally { thumbBusy.delete(f.id); }
+  }
 }
 
 // ── 清單畫面 ──
@@ -55,14 +108,18 @@ function render() {
     li.draggable = true;
     li.dataset.id = f.id;
     if (f.id === selected) li.classList.add("selected");
-    const icon = f.kind === "image" ? "🖼" : "📄";
+    const cached = thumbCache.get(f.id) || "";
+    const pageTag = f.kind === "pdf" ? `<span class="pages">${f.pages || "?"} 頁</span>` : "";
     li.innerHTML =
       `<span class="idx">${String(i + 1).padStart(2, "0")}.</span>` +
-      `<span>${icon}</span><span class="name"></span>`;
+      `<img class="thumb" alt="" src="${cached}">` +
+      `<span class="name"></span>${pageTag}`;
     li.querySelector(".name").textContent = f.name;
     li.addEventListener("click", () => { selected = f.id; render(); });
     listEl.appendChild(li);
   });
+  updateSplitHint();
+  fillThumbs();
 }
 
 // ── 拖曳排序 ──
@@ -117,10 +174,13 @@ $("#btn-down").onclick = () => {
 };
 $("#btn-del").onclick = () => {
   const i = selIndex(); if (i < 0) return;
+  thumbCache.delete(files[i].id);
   files.splice(i, 1); selected = null; render();
 };
 $("#btn-clear").onclick = () => {
-  if (files.length && confirm("確定清除所有檔案？")) { files = []; selected = null; render(); }
+  if (files.length && confirm("確定清除所有檔案？")) {
+    files = []; selected = null; thumbCache.clear(); render();
+  }
 };
 
 // ── 工具 ──
@@ -136,7 +196,8 @@ function stamp() {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }
 function setBusy(b) {
-  $("#btn-merge").disabled = b; $("#btn-toimg").disabled = b;
+  ["#btn-merge", "#btn-toimg", "#btn-split-extract", "#btn-split-each"]
+    .forEach((s) => { $(s).disabled = b; });
 }
 // 非 jpg/png（bmp/webp/jfif 保險）→ 經 canvas 轉 png bytes
 async function toPngBytes(bytes, mime) {
@@ -223,6 +284,90 @@ $("#btn-toimg").onclick = async () => {
       download(zblob, `images_${stamp()}.zip`);
     }
     log(`🎉 完成！共 ${outputs.length} 張${outputs.length > 1 ? "（已打包 zip）" : ""}`, "ok");
+  } catch (e) {
+    log(`✘ 錯誤：${e.message}`, "err");
+  } finally { setBusy(false); setBar(0); }
+};
+
+// ── 拆分 PDF ──
+// 找目前要拆分的 PDF：選取者優先；否則清單剛好只有 1 個 PDF 就用它
+function currentPdf(silent) {
+  const sel = files.find((f) => f.id === selected);
+  if (sel && sel.kind === "pdf") return sel;
+  const pdfs = files.filter((f) => f.kind === "pdf");
+  if (pdfs.length === 1) return pdfs[0];
+  if (!silent) alert(pdfs.length ? "請先在清單點選要拆分的 PDF" : "清單裡沒有 PDF！");
+  return null;
+}
+function updateSplitHint() {
+  const f = currentPdf(true);
+  $("#split-hint").textContent = f ? `（${f.name}，共 ${f.pages || "?"} 頁）` : "";
+}
+// "1-3,5,8-10" → 0-based 索引陣列（驗證範圍、去重、保留輸入順序）
+function parseRange(str, max) {
+  const out = [];
+  for (const part of str.split(",")) {
+    const s = part.trim(); if (!s) continue;
+    const m = s.match(/^(\d+)(?:-(\d+))?$/);
+    if (!m) throw new Error(`頁碼格式錯誤：「${s}」`);
+    let a = +m[1], b = m[2] ? +m[2] : a;
+    if (a > b) [a, b] = [b, a];
+    for (let p = a; p <= b; p++) {
+      if (p < 1 || p > max) throw new Error(`頁碼超出範圍：${p}（共 ${max} 頁）`);
+      out.push(p - 1);
+    }
+  }
+  return [...new Set(out)];
+}
+
+$("#btn-split-extract").onclick = async () => {
+  const f = currentPdf(); if (!f) return;
+  const raw = $("#split-range").value.trim();
+  if (!raw) { alert("請輸入要擷取的頁碼，例如 1-3,5"); return; }
+  let idxs;
+  try { idxs = parseRange(raw, f.pages); }
+  catch (e) { alert(e.message); return; }
+  if (!idxs.length) { alert("沒有有效頁碼"); return; }
+
+  const stem = f.name.replace(/\.pdf$/i, "");
+  setBusy(true); setBar(0);
+  log(`▶ 從 ${f.name} 擷取第 ${raw} 頁（共 ${idxs.length} 頁）…`, "info");
+  try {
+    const src = await PDFDocument.load(f.bytes);
+    const out = await PDFDocument.create();
+    const pages = await out.copyPages(src, idxs);
+    pages.forEach((p) => out.addPage(p));
+    const bytes = await out.save();
+    download(new Blob([bytes], { type: "application/pdf" }), `${stem}_擷取_${stamp()}.pdf`);
+    log(`🎉 已擷取 ${idxs.length} 頁 → ${stem}_擷取.pdf`, "ok");
+  } catch (e) {
+    log(`✘ 錯誤：${e.message}`, "err");
+  } finally { setBusy(false); setBar(0); }
+};
+
+$("#btn-split-each").onclick = async () => {
+  const f = currentPdf(); if (!f) return;
+  const n = f.pages || 0;
+  if (n < 1) { alert("讀不到頁數"); return; }
+  if (n === 1) { alert("只有 1 頁，不需要拆分"); return; }
+
+  const stem = f.name.replace(/\.pdf$/i, "");
+  setBusy(true); setBar(0);
+  log(`▶ 將 ${f.name} 每頁拆成單獨 PDF（共 ${n} 頁）…`, "info");
+  try {
+    const src = await PDFDocument.load(f.bytes);
+    const zip = new JSZip();
+    for (let i = 0; i < n; i++) {
+      const out = await PDFDocument.create();
+      const [pg] = await out.copyPages(src, [i]);
+      out.addPage(pg);
+      const bytes = await out.save();
+      zip.file(`${stem}_${String(i + 1).padStart(3, "0")}.pdf`, bytes);
+      setBar((i + 1) / n);
+    }
+    const zblob = await zip.generateAsync({ type: "blob" });
+    download(zblob, `${stem}_拆分_${stamp()}.zip`);
+    log(`🎉 已拆成 ${n} 個單頁 PDF（打包 zip）`, "ok");
   } catch (e) {
     log(`✘ 錯誤：${e.message}`, "err");
   } finally { setBusy(false); setBar(0); }

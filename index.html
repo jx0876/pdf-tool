@@ -46,6 +46,14 @@
     <span class="muted small">（數字越大越清晰）</span>
   </div>
 
+  <div class="split-row">
+    <span class="muted">✂ 拆分（對選取的 PDF）：</span>
+    <input id="split-range" type="text" placeholder="頁碼 如 1-3,5,8-10">
+    <button class="sbtn" id="btn-split-extract">擷取這些頁</button>
+    <button class="sbtn" id="btn-split-each">每頁拆單檔</button>
+    <span id="split-hint" class="muted small"></span>
+  </div>
+
   <div class="action-row">
     <button class="big merge" id="btn-merge">⬇ 合併輸出 PDF</button>
     <button class="big toimg" id="btn-toimg">🖼 PDF → 圖片</button>
